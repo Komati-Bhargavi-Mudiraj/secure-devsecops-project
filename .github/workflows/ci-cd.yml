@@ -1,0 +1,59 @@
+
+name: Secure DevSecOps CI-CD Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  security-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install bandit pip-audit
+
+      - name: Application Testing
+        run: |
+          python -m unittest -v test_app.py
+
+      - name: Bandit Security Scan
+        run: |
+          bandit -r . -x venv,.git
+
+      - name: Dependency Vulnerability Scan
+        run: |
+          pip-audit -r requirements.txt
+
+      - name: Gitleaks Secret Scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker Image Build
+        run: |
+          docker build -t secure-devsecops-app:ci .
+
+      - name: Trivy Container Scan
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:latest image \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            secure-devsecops-app:ci
